@@ -15,14 +15,14 @@ import {
 } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 
-// Environment-driven client configuration
+// Environment-driven client configuration with cbt-ai-53140 defaults
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCIC6dJ7YCFkk05SiNy-tUrPFW7a63Qw4Q',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'cbt-ai-53140.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'cbt-ai-53140',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'cbt-ai-53140.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1095090260841',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:1095090260841:web:aef75c3e6c9f57e525cbf8',
 };
 
 export const isFirebaseConfigured = Boolean(
