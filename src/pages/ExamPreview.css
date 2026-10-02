@@ -1,0 +1,119 @@
+/* ExamPreview Page */
+.preview-page {
+  padding: var(--sp-8) 0;
+  max-width: 800px;
+}
+
+.preview-header {
+  margin-bottom: var(--sp-6);
+}
+
+.preview-header h1 {
+  font-size: var(--fs-2xl);
+  font-weight: 800;
+  margin-bottom: var(--sp-3);
+}
+
+.preview-badges {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.preview-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-8);
+}
+
+.preview-stat {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--c-bg-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  color: var(--c-primary);
+}
+
+.preview-stat > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-num { font-size: var(--fs-lg); font-weight: 700; color: var(--c-text); }
+.stat-label { font-size: var(--fs-xs); color: var(--c-text-muted); }
+
+.preview-chars {
+  margin-bottom: var(--sp-8);
+}
+
+.preview-chars h3 {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  margin-bottom: var(--sp-3);
+}
+
+.chars-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.preview-questions-summary {
+  margin-bottom: var(--sp-8);
+}
+
+.preview-questions-summary h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  margin-bottom: var(--sp-4);
+}
+
+.q-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.q-summary-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.q-num {
+  font-weight: 700;
+  color: var(--c-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  min-width: 32px;
+}
+
+.q-preview-text {
+  flex: 1;
+  font-size: var(--fs-sm);
+  color: var(--c-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.q-summary-more {
+  text-align: center;
+  padding: var(--sp-3);
+  color: var(--c-text-muted);
+  font-size: var(--fs-sm);
+}
+
+.preview-actions {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-8) 0;
+}

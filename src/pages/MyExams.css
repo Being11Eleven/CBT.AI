@@ -1,0 +1,98 @@
+/* MyExams Page */
+.myexams-page {
+  padding: var(--sp-8) 0;
+}
+
+.myexams-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--sp-8);
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+}
+
+.myexams-header h1 {
+  font-size: var(--fs-2xl);
+  font-weight: 800;
+  margin-bottom: var(--sp-1);
+}
+
+.myexams-header p {
+  color: var(--c-text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-20) 0;
+  color: var(--c-text-muted);
+  text-align: center;
+}
+
+.empty-state h3 {
+  font-size: var(--fs-xl);
+  color: var(--c-text);
+}
+
+.exams-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--sp-4);
+}
+
+.exam-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.exam-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.exam-card-header h3 {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.exam-card-meta {
+  display: flex;
+  gap: var(--sp-4);
+  font-size: var(--fs-xs);
+  color: var(--c-text-muted);
+}
+
+.exam-card-meta span {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.exam-card-info {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.exam-card-date {
+  font-size: var(--fs-xs);
+  color: var(--c-text-muted);
+}
+
+.exam-card-actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+@media (max-width: 640px) {
+  .exams-grid { grid-template-columns: 1fr; }
+}
