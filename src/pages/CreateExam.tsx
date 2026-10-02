@@ -1,32 +1,60 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, FileText, BookOpen, MessageSquare, ChevronDown, ChevronUp, X, Sparkles, AlertCircle } from 'lucide-react';
+import {
+  Upload,
+  FileText,
+  BookOpen,
+  MessageSquare,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Sparkles,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Layers,
+  FileUp,
+  ArrowRight,
+  ShieldCheck,
+  Cpu
+} from 'lucide-react';
 import { v4 as uuid } from 'uuid';
-import { ACADEMIC_LEVELS, SUBJECTS, QUESTION_TYPES, DIFFICULTIES, QUESTION_CHARACTERISTICS, DEFAULT_MARKING, EXAM_DURATIONS, QUESTION_COUNTS } from '../data/constants';
-import { extractTextFromFile } from '../services/ai-engine';
+import {
+  ACADEMIC_LEVELS,
+  SUBJECTS,
+  QUESTION_TYPES,
+  DIFFICULTIES,
+  QUESTION_CHARACTERISTICS,
+  EXAM_DURATIONS,
+  QUESTION_COUNTS
+} from '../data/constants';
 import { storage } from '../services/storage';
-import type { ExamConfig, UploadedDocument, AcademicLevel, QuestionType, Difficulty, QuestionCharacteristic } from '../types';
+import type { ExamConfig, AcademicLevel, QuestionType, Difficulty, QuestionCharacteristic } from '../types';
 import './CreateExam.css';
+
+// Module-level file store so Generating page can access the File objects
+// without storing binary data in localStorage
+export const pendingFiles = new Map<string, File>();
 
 export default function CreateExam() {
   const navigate = useNavigate();
 
   // ── State ──
   const [studyFile, setStudyFile] = useState<File | null>(null);
-  const [studyContent, setStudyContent] = useState('');
   const [syllabusFile, setSyllabusFile] = useState<File | null>(null);
-  const [syllabusContent, setSyllabusContent] = useState('');
   const [instructionFile, setInstructionFile] = useState<File | null>(null);
   const [instructionContent, setInstructionContent] = useState('');
 
-  const [selectedLevel, setSelectedLevel] = useState<AcademicLevel | null>(null);
+  const [selectedLevel, setSelectedLevel] = useState<AcademicLevel | null>(
+    ACADEMIC_LEVELS.find(l => l.id === 'jee_advanced') || ACADEMIC_LEVELS[0]
+  );
   const [customLevel, setCustomLevel] = useState('');
-  const [subject, setSubject] = useState('');
+  const [subject, setSubject] = useState('Physics');
   const [customSubject, setCustomSubject] = useState('');
-  const [questionTypes, setQuestionTypes] = useState<QuestionType[]>(['single_correct_mcq']);
-  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [questionTypes, setQuestionTypes] = useState<QuestionType[]>(['single_correct_mcq', 'multiple_correct_mcq']);
+  const [difficulty, setDifficulty] = useState<Difficulty>('hard');
   const [customDifficulty, setCustomDifficulty] = useState('');
-  const [characteristics, setCharacteristics] = useState<QuestionCharacteristic[]>([]);
+  const [characteristics, setCharacteristics] = useState<QuestionCharacteristic[]>(['conceptual', 'reasoning']);
   const [questionCount, setQuestionCount] = useState(20);
   const [duration, setDuration] = useState(60);
   const [markCorrect, setMarkCorrect] = useState(4);
@@ -41,24 +69,15 @@ export default function CreateExam() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
-  const [levelCategory, setLevelCategory] = useState<string>('school');
+  const [levelCategory, setLevelCategory] = useState<string>('competitive');
 
   // ── Handlers ──
-  const handleFileUpload = useCallback(async (
+  const handleFileUpload = useCallback((
     file: File,
     setFile: (f: File | null) => void,
-    setContent: (c: string) => void,
+    _setContent?: (c: string) => void,
   ) => {
     setFile(file);
-    setProcessing(true);
-    try {
-      const text = await extractTextFromFile(file);
-      setContent(text);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to process file');
-    } finally {
-      setProcessing(false);
-    }
   }, []);
 
   const toggleCharacteristic = (c: QuestionCharacteristic) => {
@@ -79,61 +98,30 @@ export default function CreateExam() {
     // Validate
     if (!selectedLevel) { setError('Please select an academic level'); return; }
     if (!subject && !customSubject) { setError('Please select or enter a subject'); return; }
-    if (!studyContent && !syllabusContent) { setError('Please upload study material or a syllabus'); return; }
-
-    const aiConfig = storage.getAIConfig();
-    if (!aiConfig || !aiConfig.apiKey) {
-      setError('AI provider not configured. Please go to Settings and add your API key.');
-      return;
-    }
+    if (!studyFile && !syllabusFile) { setError('Please upload study material or a syllabus document'); return; }
 
     setError('');
+    setProcessing(true);
 
     const examId = uuid();
-    const documents: UploadedDocument[] = [];
 
-    if (studyContent) {
-      documents.push({
-        id: uuid(),
-        name: studyFile?.name || 'Study Material',
-        type: 'study_material',
-        mimeType: studyFile?.type || 'text/plain',
-        size: studyFile?.size || studyContent.length,
-        content: studyContent,
-        uploadedAt: Date.now(),
-      });
-    }
+    // Store file references in sessionStorage for Generating page
+    const fileRefs: Record<string, string> = {};
+    if (studyFile) fileRefs.study_material_name = studyFile.name;
+    if (syllabusFile) fileRefs.syllabus_name = syllabusFile.name;
+    sessionStorage.setItem(`exam_files_${examId}`, JSON.stringify(fileRefs));
 
-    if (syllabusContent) {
-      documents.push({
-        id: uuid(),
-        name: syllabusFile?.name || 'Syllabus',
-        type: 'syllabus',
-        mimeType: syllabusFile?.type || 'text/plain',
-        size: syllabusFile?.size || syllabusContent.length,
-        content: syllabusContent,
-        uploadedAt: Date.now(),
-      });
-    }
-
-    if (instructionContent || teacherInstructions) {
-      documents.push({
-        id: uuid(),
-        name: instructionFile?.name || 'Instructions',
-        type: 'instructions',
-        mimeType: 'text/plain',
-        size: (instructionContent + teacherInstructions).length,
-        content: `${instructionContent}\n${teacherInstructions}`.trim(),
-        uploadedAt: Date.now(),
-      });
-    }
+    // Store actual File objects
+    if (studyFile) pendingFiles.set(`${examId}_study`, studyFile);
+    if (syllabusFile) pendingFiles.set(`${examId}_syllabus`, syllabusFile);
+    if (instructionFile) pendingFiles.set(`${examId}_instruction`, instructionFile);
 
     const finalSubject = customSubject || subject;
     const finalLevel = selectedLevel.id === 'custom' ? { ...selectedLevel, label: customLevel || 'Custom Level' } : selectedLevel;
 
     const config: ExamConfig = {
       id: examId,
-      title: `${finalLevel.label} ${finalSubject} — ${DIFFICULTIES.find(d => d.value === difficulty)?.label || difficulty} Test`,
+      title: `${finalLevel.label} ${finalSubject} — ${DIFFICULTIES.find(d => d.value === difficulty)?.label || difficulty} Examination`,
       level: finalLevel,
       subject: finalSubject,
       questionTypes,
@@ -167,7 +155,7 @@ export default function CreateExam() {
       status: 'generating',
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      documents,
+      documents: [],
       version: 1,
     });
 
@@ -175,325 +163,522 @@ export default function CreateExam() {
   };
 
   const filteredLevels = ACADEMIC_LEVELS.filter(l => l.category === levelCategory);
+  const isReady = (studyFile || syllabusFile) && selectedLevel && (subject || customSubject);
 
   return (
-    <div className="create-page container animate-fade-in">
-      <div className="create-header">
-        <h1>Create Examination</h1>
-        <p>Upload your material and configure the exam</p>
+    <div className="create-studio-experience container-wide animate-fade-in">
+      {/* Page Header */}
+      <div className="studio-topbar">
+        <div>
+          <span className="eyebrow">EXAMINATION COMPILER</span>
+          <h1 className="studio-title">
+            Configure Your <span className="font-editorial">Examination.</span>
+          </h1>
+          <p className="studio-subtitle">
+            Provide chapter text or syllabus, set difficulty parameters, and let the AI generate
+            an independently verified examination paper.
+          </p>
+        </div>
       </div>
 
       {error && (
-        <div className="error-banner">
-          <AlertCircle size={16} />
+        <div className="error-banner animate-fade-in">
+          <AlertCircle size={18} />
           <span>{error}</span>
-          <button onClick={() => setError('')}><X size={14} /></button>
+          <button onClick={() => setError('')} className="error-close-btn" aria-label="Dismiss error">
+            <X size={15} />
+          </button>
         </div>
       )}
 
-      <div className="create-form">
-        {/* === SECTION: Upload Material === */}
-        <div className="form-section">
-          <h2 className="form-section-title"><FileText size={18} /> Study Material</h2>
+      {/* Dual Pane Studio Layout */}
+      <div className="studio-layout">
+        {/* ============================================================
+            LEFT PANE: Sticky Live Blueprint Preview Console
+            ============================================================ */}
+        <aside className="studio-blueprint-sidebar">
+          <div className="blueprint-console surface-elevated">
+            <div className="console-head">
+              <div className="console-indicator">
+                <span className={`status-dot ${isReady ? 'dot-ready' : 'dot-pending'}`} />
+                <span className="console-tag font-mono">
+                  {isReady ? 'BLUEPRINT COMPILED' : 'AWAITING PARAMETERS'}
+                </span>
+              </div>
+              <span className="badge badge-cyan">{questionCount} Qs</span>
+            </div>
 
-          <div className="upload-area"
-            onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
-            onDragLeave={e => e.currentTarget.classList.remove('drag-over')}
-            onDrop={e => {
-              e.preventDefault();
-              e.currentTarget.classList.remove('drag-over');
-              const file = e.dataTransfer.files[0];
-              if (file) handleFileUpload(file, setStudyFile, setStudyContent);
-            }}
-          >
-            <input
-              type="file"
-              id="study-upload"
-              accept=".pdf,.txt,.text,.md,.doc,.docx"
-              className="upload-input"
-              onChange={e => {
-                const file = e.target.files?.[0];
-                if (file) handleFileUpload(file, setStudyFile, setStudyContent);
+            <div className="console-main-info">
+              <span className="console-level-badge">{selectedLevel?.label || 'Select Level'}</span>
+              <h3 className="console-exam-title">
+                {customSubject || subject || 'Subject Undefined'}
+              </h3>
+              <p className="console-sub-detail">
+                {DIFFICULTIES.find(d => d.value === difficulty)?.label || difficulty} Difficulty • {duration} Minutes
+              </p>
+            </div>
+
+            <div className="console-specs-list">
+              <div className="spec-row">
+                <span className="spec-key">Material:</span>
+                <span className="spec-val">
+                  {studyFile ? studyFile.name.slice(0, 22) + (studyFile.name.length > 22 ? '...' : '') : 'None Uploaded'}
+                </span>
+              </div>
+              <div className="spec-row">
+                <span className="spec-key">Types:</span>
+                <span className="spec-val">{questionTypes.length} Selected</span>
+              </div>
+              <div className="spec-row">
+                <span className="spec-key">Marking:</span>
+                <span className="spec-val font-mono">+{markCorrect} / {markIncorrect}</span>
+              </div>
+              <div className="spec-row">
+                <span className="spec-key">Pacing:</span>
+                <span className="spec-val font-mono">{(duration / questionCount).toFixed(1)}m / Q</span>
+              </div>
+            </div>
+
+            {studyFile && (
+              <div className="console-file-chip">
+                <FileText size={14} className="text-cyan" />
+                <span className="file-chip-name">{studyFile.name}</span>
+                <span className="file-chip-size">{(studyFile.size / 1024).toFixed(0)} KB</span>
+              </div>
+            )}
+
+            <button
+              className="btn btn-primary btn-lg console-submit-btn"
+              onClick={handleGenerate}
+              disabled={processing || !isReady}
+            >
+              <Sparkles size={18} />
+              <span>{processing ? 'Compiling Paper...' : 'Generate Examination'}</span>
+              <ArrowRight size={16} />
+            </button>
+
+            {!isReady && (
+              <p className="console-hint font-mono">
+                * Please upload chapter material and choose subject to compile.
+              </p>
+            )}
+          </div>
+        </aside>
+
+        {/* ============================================================
+            RIGHT PANE: Comprehensive Configuration Studio
+            ============================================================ */}
+        <div className="studio-config-main">
+          {/* ── 01. STUDY MATERIAL UPLOAD ── */}
+          <section className="studio-card surface-elevated">
+            <div className="studio-card-header">
+              <span className="card-step-badge font-mono">01</span>
+              <div>
+                <h2 className="studio-card-title">Study Material & Source Text</h2>
+                <p className="studio-card-desc">
+                  Upload the chapter PDF, lecture notes, textbook pages, or syllabus to generate questions from.
+                </p>
+              </div>
+            </div>
+
+            {/* Premium Drag and Drop Zone */}
+            <div
+              className={`luxury-dropzone ${studyFile ? 'has-file' : ''}`}
+              onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-active'); }}
+              onDragLeave={e => e.currentTarget.classList.remove('drag-active')}
+              onDrop={e => {
+                e.preventDefault();
+                e.currentTarget.classList.remove('drag-active');
+                const file = e.dataTransfer.files[0];
+                if (file) handleFileUpload(file, setStudyFile);
               }}
-            />
-            <label htmlFor="study-upload" className="upload-label">
-              <Upload size={32} />
-              <span className="upload-title">{studyFile ? studyFile.name : 'Upload Chapter / Study Material'}</span>
-              <span className="upload-hint">PDF, TXT, or text documents • Drag & drop supported</span>
-              {studyContent && (
-                <span className="upload-success badge badge-success">✓ {studyContent.length.toLocaleString()} chars extracted</span>
+            >
+              <input
+                type="file"
+                id="study-upload-input"
+                accept=".pdf,.txt,.text,.md,.doc,.docx"
+                className="hidden-file-input"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileUpload(file, setStudyFile);
+                }}
+              />
+              <label htmlFor="study-upload-input" className="dropzone-label">
+                <div className="dropzone-icon-glow">
+                  {studyFile ? <CheckCircle2 size={32} className="text-cyan" /> : <FileUp size={32} />}
+                </div>
+                <div className="dropzone-text-block">
+                  <span className="dropzone-headline">
+                    {studyFile ? studyFile.name : 'Click to upload or drag & drop chapter PDF'}
+                  </span>
+                  <span className="dropzone-hint">
+                    Supports PDF, Markdown, TXT, DOCX • Up to 50MB
+                  </span>
+                </div>
+                {studyFile && (
+                  <div className="dropzone-active-pill">
+                    <span className="badge badge-success">
+                      ✓ Ready for parsing ({(studyFile.size / 1024).toFixed(1)} KB)
+                    </span>
+                    <button
+                      type="button"
+                      className="clear-file-btn"
+                      onClick={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setStudyFile(null);
+                      }}
+                      aria-label="Remove uploaded file"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+              </label>
+            </div>
+
+            {/* Optional secondary uploads */}
+            <div className="secondary-uploads-row">
+              <div className="compact-upload-tile">
+                <input
+                  type="file"
+                  id="syllabus-upload"
+                  accept=".pdf,.txt,.text,.md"
+                  className="hidden-file-input"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileUpload(file, setSyllabusFile);
+                  }}
+                />
+                <label htmlFor="syllabus-upload" className="compact-upload-label">
+                  <BookOpen size={16} />
+                  <span>{syllabusFile ? syllabusFile.name : 'Attach Syllabus / Topic Weightage (Optional)'}</span>
+                  {syllabusFile && <CheckCircle2 size={15} className="text-cyan ml-auto" />}
+                </label>
+              </div>
+
+              <div className="compact-upload-tile">
+                <input
+                  type="file"
+                  id="instruction-upload"
+                  accept=".pdf,.txt,.text,.md"
+                  className="hidden-file-input"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileUpload(file, setInstructionFile, setInstructionContent);
+                  }}
+                />
+                <label htmlFor="instruction-upload" className="compact-upload-label">
+                  <MessageSquare size={16} />
+                  <span>{instructionFile ? instructionFile.name : 'Attach Teacher Guidelines (Optional)'}</span>
+                  {instructionFile && <CheckCircle2 size={15} className="text-cyan ml-auto" />}
+                </label>
+              </div>
+            </div>
+
+            {/* Teacher instructions textarea */}
+            <div className="form-group" style={{ marginTop: '1.25rem' }}>
+              <label className="label">Custom Teacher Directives</label>
+              <textarea
+                className="textarea"
+                placeholder="e.g. Do not include derivations. Focus strictly on numerical calculations and boundary conditions. Emphasize multi-step conservation laws."
+                value={teacherInstructions}
+                onChange={e => setTeacherInstructions(e.target.value)}
+                rows={2}
+              />
+            </div>
+          </section>
+
+          {/* ── 02. ACADEMIC LEVEL ── */}
+          <section className="studio-card surface-elevated">
+            <div className="studio-card-header">
+              <span className="card-step-badge font-mono">02</span>
+              <div>
+                <h2 className="studio-card-title">Academic Level & Standard</h2>
+                <p className="studio-card-desc">
+                  Calibrates the expected mathematical rigor, notation depth, and Bloom's taxonomy.
+                </p>
+              </div>
+            </div>
+
+            {/* Category segmented filter */}
+            <div className="category-segmented-bar">
+              {[
+                { id: 'school', label: 'School (Class 6-10)' },
+                { id: 'competitive', label: 'Competitive (JEE / NEET)' },
+                { id: 'college', label: 'Higher Ed & Degree' },
+                { id: 'custom', label: 'Custom Specification' },
+              ].map(cat => (
+                <button
+                  key={cat.id}
+                  className={`segmented-btn ${levelCategory === cat.id ? 'active' : ''}`}
+                  onClick={() => setLevelCategory(cat.id)}
+                  type="button"
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Level selection cards */}
+            <div className="level-selection-grid">
+              {filteredLevels.map(level => (
+                <div
+                  key={level.id}
+                  className={`level-tile ${selectedLevel?.id === level.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedLevel(level)}
+                >
+                  <span className="level-tile-name">{level.label}</span>
+                  {level.description && (
+                    <span className="level-tile-sub">{level.description}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {selectedLevel?.id === 'custom' && (
+              <input
+                className="input"
+                placeholder="Enter custom academic level..."
+                value={customLevel}
+                onChange={e => setCustomLevel(e.target.value)}
+                style={{ marginTop: '1rem' }}
+              />
+            )}
+          </section>
+
+          {/* ── 03. SUBJECT SELECTION ── */}
+          <section className="studio-card surface-elevated">
+            <div className="studio-card-header">
+              <span className="card-step-badge font-mono">03</span>
+              <div>
+                <h2 className="studio-card-title">Subject & Domain</h2>
+                <p className="studio-card-desc">Select the primary scientific or academic discipline.</p>
+              </div>
+            </div>
+
+            <div className="subject-grid-select">
+              <select
+                className="select"
+                value={subject}
+                onChange={e => { setSubject(e.target.value); setCustomSubject(''); }}
+              >
+                <option value="">Select discipline...</option>
+                {SUBJECTS.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+                <option value="custom">Custom Discipline / Cross-Departmental</option>
+              </select>
+
+              {subject === 'custom' && (
+                <input
+                  className="input"
+                  placeholder="Enter custom subject name..."
+                  value={customSubject}
+                  onChange={e => setCustomSubject(e.target.value)}
+                  style={{ marginTop: '0.85rem' }}
+                />
               )}
-            </label>
-          </div>
-        </div>
+            </div>
+          </section>
 
-        {/* === SECTION: Optional Uploads === */}
-        <div className="form-section">
-          <h2 className="form-section-title"><BookOpen size={18} /> Optional Materials</h2>
-
-          <div className="optional-uploads">
-            <div className="upload-compact">
-              <input
-                type="file"
-                id="syllabus-upload"
-                accept=".pdf,.txt,.text,.md"
-                className="upload-input"
-                onChange={e => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFileUpload(file, setSyllabusFile, setSyllabusContent);
-                }}
-              />
-              <label htmlFor="syllabus-upload" className="btn btn-secondary">
-                <Upload size={14} /> {syllabusFile ? syllabusFile.name : 'Upload Syllabus'}
-              </label>
-              {syllabusContent && <span className="badge badge-success">✓</span>}
+          {/* ── 04. QUESTION TYPES & DIFFICULTY ── */}
+          <section className="studio-card surface-elevated">
+            <div className="studio-card-header">
+              <span className="card-step-badge font-mono">04</span>
+              <div>
+                <h2 className="studio-card-title">Question Typology & Difficulty</h2>
+                <p className="studio-card-desc">Choose candidate formats and target cognitive difficulty.</p>
+              </div>
             </div>
 
-            <div className="upload-compact">
-              <input
-                type="file"
-                id="instruction-upload"
-                accept=".pdf,.txt,.text,.md"
-                className="upload-input"
-                onChange={e => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFileUpload(file, setInstructionFile, setInstructionContent);
-                }}
-              />
-              <label htmlFor="instruction-upload" className="btn btn-secondary">
-                <Upload size={14} /> {instructionFile ? instructionFile.name : 'Upload Instructions'}
-              </label>
-              {instructionContent && <span className="badge badge-success">✓</span>}
-            </div>
-          </div>
-
-          <div className="form-group" style={{ marginTop: 'var(--sp-4)' }}>
-            <label className="label"><MessageSquare size={14} /> Teacher Instructions</label>
-            <textarea
-              className="textarea"
-              placeholder="e.g., Do not ask questions from section 4.3. Focus only on numericals. Do not include derivations."
-              value={teacherInstructions}
-              onChange={e => setTeacherInstructions(e.target.value)}
-              rows={3}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="label">Additional Instructions</label>
-            <textarea
-              className="textarea"
-              placeholder="Any additional context or requirements for the exam..."
-              value={additionalInstructions}
-              onChange={e => setAdditionalInstructions(e.target.value)}
-              rows={2}
-            />
-          </div>
-        </div>
-
-        {/* === SECTION: Academic Level === */}
-        <div className="form-section">
-          <h2 className="form-section-title">Academic Level</h2>
-
-          <div className="level-tabs">
-            {['school', 'competitive', 'college', 'custom'].map(cat => (
-              <button
-                key={cat}
-                className={`chip ${levelCategory === cat ? 'active' : ''}`}
-                onClick={() => setLevelCategory(cat)}
-              >
-                {cat.charAt(0).toUpperCase() + cat.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          <div className="level-grid">
-            {filteredLevels.map(level => (
-              <button
-                key={level.id}
-                className={`level-card ${selectedLevel?.id === level.id ? 'active' : ''}`}
-                onClick={() => setSelectedLevel(level)}
-              >
-                <span className="level-label">{level.label}</span>
-                {level.description && <span className="level-desc">{level.description}</span>}
-              </button>
-            ))}
-          </div>
-
-          {selectedLevel?.id === 'custom' && (
-            <input
-              className="input"
-              placeholder="Enter your custom level..."
-              value={customLevel}
-              onChange={e => setCustomLevel(e.target.value)}
-              style={{ marginTop: 'var(--sp-3)' }}
-            />
-          )}
-        </div>
-
-        {/* === SECTION: Subject === */}
-        <div className="form-section">
-          <h2 className="form-section-title">Subject</h2>
-          <select
-            className="select"
-            value={subject}
-            onChange={e => { setSubject(e.target.value); setCustomSubject(''); }}
-          >
-            <option value="">Select subject...</option>
-            {SUBJECTS.map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-            <option value="custom">Custom Subject</option>
-          </select>
-          {subject === 'custom' && (
-            <input
-              className="input"
-              placeholder="Enter your subject..."
-              value={customSubject}
-              onChange={e => setCustomSubject(e.target.value)}
-              style={{ marginTop: 'var(--sp-3)' }}
-            />
-          )}
-        </div>
-
-        {/* === SECTION: Exam Type === */}
-        <div className="form-section">
-          <h2 className="form-section-title">Question Types</h2>
-          <div className="type-grid">
-            {QUESTION_TYPES.map(t => (
-              <button
-                key={t.value}
-                className={`type-card ${questionTypes.includes(t.value) ? 'active' : ''}`}
-                onClick={() => toggleQuestionType(t.value)}
-              >
-                <span className="type-label">{t.label}</span>
-                <span className="type-desc">{t.description}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* === SECTION: Difficulty === */}
-        <div className="form-section">
-          <h2 className="form-section-title">Difficulty</h2>
-          <div className="difficulty-grid">
-            {DIFFICULTIES.map(d => (
-              <button
-                key={d.value}
-                className={`difficulty-card ${difficulty === d.value ? 'active' : ''}`}
-                onClick={() => setDifficulty(d.value)}
-                style={{ '--dc': d.color } as React.CSSProperties}
-              >
-                {d.label}
-              </button>
-            ))}
-          </div>
-          {difficulty === 'custom' && (
-            <input
-              className="input"
-              placeholder="Describe your custom difficulty..."
-              value={customDifficulty}
-              onChange={e => setCustomDifficulty(e.target.value)}
-              style={{ marginTop: 'var(--sp-3)' }}
-            />
-          )}
-        </div>
-
-        {/* === SECTION: Characteristics === */}
-        <div className="form-section">
-          <h2 className="form-section-title">Question Characteristics</h2>
-          <p style={{ color: 'var(--c-text-muted)', fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-4)' }}>
-            Select multiple styles for richer examination quality
-          </p>
-          <div className="chars-grid">
-            {QUESTION_CHARACTERISTICS.map(c => (
-              <button
-                key={c.value}
-                className={`chip ${characteristics.includes(c.value) ? 'active' : ''}`}
-                onClick={() => toggleCharacteristic(c.value)}
-              >
-                <span>{c.icon}</span> {c.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* === SECTION: Count & Duration === */}
-        <div className="form-section">
-          <h2 className="form-section-title">Exam Parameters</h2>
-          <div className="params-grid">
+            {/* Question Types */}
             <div className="form-group">
-              <label className="label">Number of Questions</label>
-              <select className="select" value={questionCount} onChange={e => setQuestionCount(Number(e.target.value))}>
-                {QUESTION_COUNTS.map(n => (
-                  <option key={n} value={n}>{n} questions</option>
+              <label className="label">Question Typology (Multiple Permitted)</label>
+              <div className="types-interactive-grid">
+                {QUESTION_TYPES.map(t => {
+                  const isSelected = questionTypes.includes(t.value);
+                  return (
+                    <div
+                      key={t.value}
+                      className={`type-tile ${isSelected ? 'selected' : ''}`}
+                      onClick={() => toggleQuestionType(t.value)}
+                    >
+                      <div className="type-tile-header">
+                        <span className="type-tile-title">{t.label}</span>
+                        {isSelected && <CheckCircle2 size={16} className="text-cyan" />}
+                      </div>
+                      <span className="type-tile-desc">{t.description}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Difficulty Calibration */}
+            <div className="form-group" style={{ marginTop: '1.75rem' }}>
+              <label className="label">Target Difficulty Curve</label>
+              <div className="difficulty-segmented-row">
+                {DIFFICULTIES.map(d => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    className={`diff-btn ${difficulty === d.value ? 'selected' : ''}`}
+                    onClick={() => setDifficulty(d.value)}
+                    style={{ '--diff-color': d.color } as React.CSSProperties}
+                  >
+                    <span>{d.label}</span>
+                  </button>
                 ))}
-              </select>
+              </div>
+              {difficulty === 'custom' && (
+                <input
+                  className="input"
+                  placeholder="Describe target difficulty profile..."
+                  value={customDifficulty}
+                  onChange={e => setCustomDifficulty(e.target.value)}
+                  style={{ marginTop: '0.85rem' }}
+                />
+              )}
             </div>
-            <div className="form-group">
-              <label className="label">Duration (minutes)</label>
-              <select className="select" value={duration} onChange={e => setDuration(Number(e.target.value))}>
-                {EXAM_DURATIONS.map(d => (
-                  <option key={d} value={d}>{d} min ({Math.floor(d / 60)}h {d % 60}m)</option>
-                ))}
-              </select>
+
+            {/* Characteristics */}
+            <div className="form-group" style={{ marginTop: '1.75rem' }}>
+              <label className="label">Cognitive Characteristics (Multi-Select)</label>
+              <div className="characteristics-chips-wrap">
+                {QUESTION_CHARACTERISTICS.map(c => {
+                  const isActive = characteristics.includes(c.value);
+                  return (
+                    <button
+                      key={c.value}
+                      type="button"
+                      className={`chip ${isActive ? 'active' : ''}`}
+                      onClick={() => toggleCharacteristic(c.value)}
+                    >
+                      <span>{c.icon}</span>
+                      <span>{c.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          </section>
+
+          {/* ── 05. PARAMETERS & MARKING ── */}
+          <section className="studio-card surface-elevated">
+            <div className="studio-card-header">
+              <span className="card-step-badge font-mono">05</span>
+              <div>
+                <h2 className="studio-card-title">Duration, Volume & Marking Rules</h2>
+                <p className="studio-card-desc">Set question count, time limits, and negative scoring.</p>
+              </div>
+            </div>
+
+            <div className="params-row-grid">
+              <div className="form-group">
+                <label className="label">Question Volume</label>
+                <select
+                  className="select"
+                  value={questionCount}
+                  onChange={e => setQuestionCount(Number(e.target.value))}
+                >
+                  {QUESTION_COUNTS.map(n => (
+                    <option key={n} value={n}>{n} Questions</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="label">Time Allocation</label>
+                <select
+                  className="select"
+                  value={duration}
+                  onChange={e => setDuration(Number(e.target.value))}
+                >
+                  {EXAM_DURATIONS.map(d => (
+                    <option key={d} value={d}>{d} min ({Math.floor(d / 60)}h {d % 60}m)</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Marking scheme */}
+            <div className="marking-scheme-box">
+              <label className="label">Scoring Metrics</label>
+              <div className="marking-inputs-row">
+                <div className="marking-field">
+                  <span className="marking-k">Correct (+)</span>
+                  <input
+                    type="number"
+                    className="input font-mono"
+                    value={markCorrect}
+                    onChange={e => setMarkCorrect(Number(e.target.value))}
+                    min={0}
+                  />
+                </div>
+                <div className="marking-field">
+                  <span className="marking-k">Incorrect (-)</span>
+                  <input
+                    type="number"
+                    className="input font-mono"
+                    value={markIncorrect}
+                    onChange={e => setMarkIncorrect(Number(e.target.value))}
+                    step={0.25}
+                  />
+                </div>
+                <div className="marking-field">
+                  <span className="marking-k">Unanswered</span>
+                  <input
+                    type="number"
+                    className="input font-mono"
+                    value={markUnanswered}
+                    onChange={e => setMarkUnanswered(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              <label className="checkbox-control">
+                <input
+                  type="checkbox"
+                  checked={partialMarking}
+                  onChange={e => setPartialMarking(e.target.checked)}
+                />
+                <span>Enable proportional partial marking for multi-correct questions</span>
+              </label>
+            </div>
+
+            {/* Advanced toggle */}
+            <button
+              type="button"
+              className="advanced-studio-toggle"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              <span>Advanced Verification Protocols</span>
+              {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+
+            {showAdvanced && (
+              <div className="advanced-options-drawer animate-fade-in">
+                <label className="checkbox-control">
+                  <input
+                    type="checkbox"
+                    checked={enablePYQ}
+                    onChange={e => setEnablePYQ(e.target.checked)}
+                  />
+                  <span>Perform Historical PYQ Pattern Calibration</span>
+                </label>
+                <label className="checkbox-control">
+                  <input
+                    type="checkbox"
+                    checked={enableResearch}
+                    onChange={e => setEnableResearch(e.target.checked)}
+                  />
+                  <span>Activate Independent Cross-Source Validation</span>
+                </label>
+              </div>
+            )}
+          </section>
         </div>
-
-        {/* === SECTION: Marking === */}
-        <div className="form-section">
-          <h2 className="form-section-title">Marking Scheme</h2>
-          <div className="marking-grid">
-            <div className="form-group">
-              <label className="label">Correct (+)</label>
-              <input type="number" className="input" value={markCorrect}
-                onChange={e => setMarkCorrect(Number(e.target.value))} min={0} />
-            </div>
-            <div className="form-group">
-              <label className="label">Incorrect</label>
-              <input type="number" className="input" value={markIncorrect}
-                onChange={e => setMarkIncorrect(Number(e.target.value))} step={0.25} />
-            </div>
-            <div className="form-group">
-              <label className="label">Unanswered</label>
-              <input type="number" className="input" value={markUnanswered}
-                onChange={e => setMarkUnanswered(Number(e.target.value))} />
-            </div>
-          </div>
-          <label className="checkbox-label">
-            <input type="checkbox" checked={partialMarking} onChange={e => setPartialMarking(e.target.checked)} />
-            Enable partial marking for multiple-correct questions
-          </label>
-        </div>
-
-        {/* === Advanced === */}
-        <button className="advanced-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
-          {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          Advanced Controls
-        </button>
-
-        {showAdvanced && (
-          <div className="form-section animate-scale-in">
-            <label className="checkbox-label">
-              <input type="checkbox" checked={enablePYQ} onChange={e => setEnablePYQ(e.target.checked)} />
-              Enable PYQ / Historical Exam Analysis
-            </label>
-            <label className="checkbox-label">
-              <input type="checkbox" checked={enableResearch} onChange={e => setEnableResearch(e.target.checked)} />
-              Enable Source Research
-            </label>
-          </div>
-        )}
-
-        {/* === Generate Button === */}
-        <button
-          className="btn btn-primary btn-lg generate-btn"
-          onClick={handleGenerate}
-          disabled={processing}
-        >
-          <Sparkles size={20} />
-          {processing ? 'Processing...' : 'Generate Examination'}
-        </button>
       </div>
     </div>
   );

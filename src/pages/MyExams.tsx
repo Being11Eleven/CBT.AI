@@ -1,22 +1,45 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Clock, Hash, BarChart3, Play, Eye, Trash2, BookOpen } from 'lucide-react';
+import { Plus, Clock, Hash, Play, Eye, Trash2, BookOpen, Sparkles, Cloud, Check } from 'lucide-react';
 import { storage } from '../services/storage';
+import { deleteExamFromCloud, fetchUserExamsFromCloud } from '../services/cloud-storage';
+import { useAuth } from '../context/AuthContext';
+import AuthModal from '../components/AuthModal';
 import { DIFFICULTIES } from '../data/constants';
 import type { Exam } from '../types';
 import './MyExams.css';
 
 export default function MyExams() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [exams, setExams] = useState<Exam[]>([]);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
+    // Load local exams first
     setExams(storage.getExams());
-  }, []);
 
-  const handleDelete = (id: string) => {
+    // If authenticated, fetch cloud exams and merge
+    if (user?.uid) {
+      setIsSyncing(true);
+      fetchUserExamsFromCloud(user.uid)
+        .then((cloudExams) => {
+          if (cloudExams && cloudExams.length > 0) {
+            cloudExams.forEach(ce => storage.saveExam(ce));
+            setExams(storage.getExams());
+          }
+        })
+        .finally(() => setIsSyncing(false));
+    }
+  }, [user]);
+
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this exam and all its data?')) {
       storage.deleteExam(id);
+      if (user?.uid) {
+        await deleteExamFromCloud(user.uid, id);
+      }
       setExams(storage.getExams());
     }
   };
@@ -71,6 +94,30 @@ export default function MyExams() {
 
   return (
     <div className="myexams-page container animate-fade-in">
+      {/* Account Awareness Banner */}
+      {!user ? (
+        <div className="myexams-auth-banner">
+          <div className="auth-banner-content">
+            <div className="auth-banner-icon">
+              <Sparkles size={18} />
+            </div>
+            <div>
+              <div className="auth-banner-title">Cross-Device History</div>
+              <p className="auth-banner-text">Save your examinations across devices with Google.</p>
+            </div>
+          </div>
+          <button className="btn btn-secondary btn-sm" onClick={() => setShowAuthModal(true)}>
+            Sign in with Google
+          </button>
+        </div>
+      ) : (
+        <div className="myexams-sync-status">
+          <Cloud size={14} className={isSyncing ? 'animate-pulse' : ''} />
+          <span>Cloud sync active for <strong>{user.email || user.displayName}</strong></span>
+          <span className="sync-check"><Check size={12} /></span>
+        </div>
+      )}
+
       <div className="myexams-header">
         <div>
           <h1>My Examinations</h1>
@@ -84,10 +131,10 @@ export default function MyExams() {
       {exams.length === 0 ? (
         <div className="empty-state">
           <BookOpen size={48} />
-          <h3>No examinations yet</h3>
-          <p>Create your first AI-powered examination</p>
+          <h3>Your examination library is empty</h3>
+          <p>Create your first examination to begin.</p>
           <Link to="/create" className="btn btn-primary btn-lg">
-            <Plus size={18} /> Create Exam
+            <Plus size={18} /> Create Examination
           </Link>
         </div>
       ) : (
@@ -129,6 +176,8 @@ export default function MyExams() {
           })}
         </div>
       )}
+
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </div>
   );
 }

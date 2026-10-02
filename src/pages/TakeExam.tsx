@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { v4 as uuid } from 'uuid';
-import { Clock, ChevronLeft, ChevronRight, Flag, Send, X, AlertTriangle, Maximize, CheckCircle2 } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, Flag, Send, X, AlertTriangle, Maximize, CheckCircle2, ShieldAlert, Sparkles, Shield, ArrowRight } from 'lucide-react';
 import { storage } from '../services/storage';
-import { evaluateExam } from '../services/ai-engine';
+import { evaluateExamOnBackend } from '../services/api-client';
 import MathText from '../components/MathText';
-import type { Exam, ExamAttempt, StudentResponse, QuestionState, IntegrityEvent, GeneratedQuestion } from '../types';
+import CbtLogo from '../components/CbtLogo';
+import type { Exam, ExamAttempt, ExamResult, StudentResponse, QuestionState, IntegrityEvent, ExamMode } from '../types';
 import './TakeExam.css';
 
 export default function TakeExam() {
@@ -21,20 +22,22 @@ export default function TakeExam() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
+  const [terminatedResultId, setTerminatedResultId] = useState<string | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const violationCount = useRef(0);
 
   // Initialize
   useEffect(() => {
     if (!examId) return;
     const e = storage.getExam(examId);
-    if (!e || e.status !== 'ready') {
+    if (!e || (e.status !== 'ready' && e.status !== 'active' && e.status !== 'submitted')) {
       navigate('/my-exams');
       return;
     }
     setExam(e);
+
+    const storedMode = (sessionStorage.getItem('cbtai_exam_mode_' + examId) as ExamMode) || 'serious';
 
     // Check for existing attempt
     let existingAttempt = storage.getAttemptByExam(examId);
@@ -44,6 +47,7 @@ export default function TakeExam() {
         id: uuid(),
         examId,
         examVersion: e.version,
+        mode: storedMode,
         startedAt: now,
         expiresAt: now + e.config.duration * 60 * 1000,
         responses: {},
@@ -52,77 +56,141 @@ export default function TakeExam() {
         status: 'in_progress',
       };
       storage.saveAttempt(existingAttempt);
+    } else if (!existingAttempt.mode) {
+      existingAttempt.mode = storedMode;
+      storage.saveAttempt(existingAttempt);
     }
+
+    if (existingAttempt.status === 'terminated') {
+      const existingRes = storage.getResultByAttempt(existingAttempt.id);
+      if (existingRes) setTerminatedResultId(existingRes.id);
+    }
+
     setAttempt(existingAttempt);
 
-    // Calculate initial time
+    // Calculate initial time authoritatively
     const remaining = Math.max(0, Math.floor((existingAttempt.expiresAt - Date.now()) / 1000));
     setTimeLeft(remaining);
 
-    // Mark exam as active
-    storage.saveExam({ ...e, status: 'active', updatedAt: Date.now() });
-
-    // Request fullscreen
-    try { document.documentElement.requestFullscreen?.(); } catch { /* ignore */ }
+    // Mark exam as active if not submitted
+    if (existingAttempt.status === 'in_progress') {
+      storage.saveExam({ ...e, status: 'active', updatedAt: Date.now() });
+      try { document.documentElement.requestFullscreen?.(); } catch { /* ignore */ }
+    }
   }, [examId, navigate]);
 
-  // Timer
+  // Authoritative Timer
   useEffect(() => {
-    if (!attempt || timeLeft <= 0) return;
+    if (!attempt || attempt.status !== 'in_progress' || timeLeft <= 0) return;
 
     timerRef.current = setInterval(() => {
-      setTimeLeft(prev => {
-        const remaining = Math.max(0, Math.floor((attempt.expiresAt - Date.now()) / 1000));
-        if (remaining <= 0) {
-          handleAutoSubmit();
-          return 0;
-        }
-        return remaining;
-      });
+      const remaining = Math.max(0, Math.floor((attempt.expiresAt - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        handleAutoSubmit();
+      }
     }, 1000);
 
     return () => clearInterval(timerRef.current);
   }, [attempt]);
 
-  // Visibility & focus detection
+  // Strict Mode Termination
+  const terminateExam = useCallback(async (reason: string) => {
+    if (!exam || !attempt || attempt.status === 'terminated' || isSubmitting) return;
+    setIsSubmitting(true);
+    clearInterval(timerRef.current);
+    try { document.exitFullscreen?.(); } catch { /* ignore */ }
+
+    const now = Date.now();
+    const event: IntegrityEvent = {
+      type: 'tab_hidden',
+      timestamp: now,
+      message: reason,
+    };
+
+    const terminatedAttempt: ExamAttempt = {
+      ...attempt,
+      submittedAt: now,
+      status: 'terminated',
+      terminatedReason: reason,
+      integrityLog: [...(attempt.integrityLog || []), event],
+    };
+
+    setAttempt(terminatedAttempt);
+    storage.saveAttempt(terminatedAttempt);
+    storage.saveExam({ ...exam, status: 'submitted', updatedAt: now });
+
+    // Evaluate answers recorded up to termination point
+    try {
+      const evalData = await evaluateExamOnBackend(
+        exam.questions,
+        terminatedAttempt.responses,
+        {
+          correct: exam.config.marking.correct,
+          incorrect: exam.config.marking.incorrect,
+          unanswered: exam.config.marking.unanswered,
+          partial: exam.config.marking.partial ? 1 : undefined,
+        }
+      );
+      const result: ExamResult = {
+        ...evalData,
+        attemptId: terminatedAttempt.id,
+        examId: exam.id,
+        studentName: terminatedAttempt.studentName,
+      };
+      storage.saveResult(result);
+      setTerminatedResultId(result.id);
+    } catch (err) {
+      console.warn('Evaluation for terminated exam recorded locally:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [exam, attempt, isSubmitting]);
+
+  // Visibility & Focus detection according to Exam Mode
   useEffect(() => {
+    if (!attempt || attempt.status !== 'in_progress') return;
+
     const handleVisibility = () => {
       if (document.hidden) {
-        violationCount.current++;
-        const event: IntegrityEvent = {
-          type: 'visibility_change',
-          timestamp: Date.now(),
-          count: violationCount.current,
-          message: `Tab switch detected (${violationCount.current}/3)`,
-        };
-        if (attempt) {
-          attempt.integrityLog.push(event);
-          storage.saveAttempt(attempt);
+        if (attempt.mode === 'practice') {
+          // Practice Mode: user is free to switch tabs, clock keeps running authoritatively
+          return;
         }
-
-        if (violationCount.current >= 3) {
-          setWarnings(prev => [...prev, 'Maximum violations reached. Exam will be auto-submitted.']);
+        // Strict Examination Mode: tab switch immediately terminates the attempt
+        terminateExam('Student navigated away from the exam tab during Strict Examination Mode.');
+      } else {
+        // Tab regained visibility: synchronize authoritative countdown
+        const remaining = Math.max(0, Math.floor((attempt.expiresAt - Date.now()) / 1000));
+        setTimeLeft(remaining);
+        if (remaining <= 0) {
           handleAutoSubmit();
-        } else {
-          setWarnings(prev => [...prev, `Warning ${violationCount.current}/3: Exam window changed. Return to examination.`]);
         }
+      }
+    };
+
+    const handleBlur = () => {
+      if (attempt.mode === 'serious' && attempt.status === 'in_progress') {
+        terminateExam('Examination window lost focus during Strict Examination Mode.');
       }
     };
 
     const handleFullscreenExit = () => {
-      if (!document.fullscreenElement) {
-        setWarnings(prev => [...prev, 'Fullscreen exited. Click to re-enter fullscreen mode.']);
+      if (!document.fullscreenElement && attempt.mode === 'serious') {
+        setWarnings(prev => [...prev, 'Fullscreen exited. Please keep the examination window active.']);
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('blur', handleBlur);
     document.addEventListener('fullscreenchange', handleFullscreenExit);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('blur', handleBlur);
       document.removeEventListener('fullscreenchange', handleFullscreenExit);
     };
-  }, [attempt]);
+  }, [attempt, terminateExam]);
 
   // ── Response management ──
   const getResponse = useCallback((qId: string): StudentResponse => {
@@ -233,11 +301,26 @@ export default function TakeExam() {
     // Exit fullscreen
     try { document.exitFullscreen?.(); } catch { /* ignore */ }
 
-    // Evaluate
+    // Evaluate on server
     try {
-      const result = await evaluateExam(exam.questions, submittedAttempt.responses, exam.config);
-      result.attemptId = submittedAttempt.id;
-      result.studentName = submittedAttempt.studentName;
+      const evalData = await evaluateExamOnBackend(
+        exam.questions,
+        submittedAttempt.responses,
+        {
+          correct: exam.config.marking.correct,
+          incorrect: exam.config.marking.incorrect,
+          unanswered: exam.config.marking.unanswered,
+          partial: exam.config.marking.partial ? 1 : undefined,
+        }
+      );
+
+      const result: ExamResult = {
+        ...evalData,
+        attemptId: submittedAttempt.id,
+        examId: exam.id,
+        studentName: submittedAttempt.studentName,
+      };
+
       storage.saveResult(result);
 
       // Update exam status
@@ -249,8 +332,7 @@ export default function TakeExam() {
 
       navigate(`/result/${result.id}`);
     } catch (error) {
-      console.error('Evaluation failed:', error);
-      // Save basic result anyway
+      console.error('Server evaluation failed, falling back to local result:', error);
       navigate('/my-exams');
     }
   };
@@ -260,14 +342,90 @@ export default function TakeExam() {
     return <div className="exam-loading"><div className="animate-spin" style={{ width: 32, height: 32, border: '3px solid var(--c-primary)', borderTop: '3px solid transparent', borderRadius: '50%' }} /></div>;
   }
 
+  // ── Terminated Screen ──
+  if (attempt.status === 'terminated') {
+    const answeredCount = Object.values(attempt.responses).filter(
+      r => r.state === 'answered' || r.state === 'answered_marked'
+    ).length;
+
+    return (
+      <div className="exam-terminated-container animate-fade-in">
+        <div className="exam-terminated-card">
+          <div className="terminated-icon-badge">
+            <ShieldAlert size={44} />
+          </div>
+          <span className="terminated-pill">Strict Proctored Examination Policy</span>
+          <h1 className="terminated-title">Examination Terminated</h1>
+          <p className="terminated-desc">
+            Your attempt was ended because the examination window was left or lost focus during Strict Examination Mode.
+          </p>
+
+          <div className="terminated-details-grid">
+            <div className="terminated-detail-item">
+              <span className="detail-label">Status</span>
+              <span className="detail-val error">Terminated</span>
+            </div>
+            <div className="terminated-detail-item">
+              <span className="detail-label">Examination Mode</span>
+              <span className="detail-val">Strict Examination Mode</span>
+            </div>
+            <div className="terminated-detail-item">
+              <span className="detail-label">Questions Recorded</span>
+              <span className="detail-val">{answeredCount} of {exam.questions.length}</span>
+            </div>
+            <div className="terminated-detail-item">
+              <span className="detail-label">Triggered Policy</span>
+              <span className="detail-val muted">{attempt.terminatedReason || 'Window lost focus / Tab switch'}</span>
+            </div>
+          </div>
+
+          <div className="terminated-note">
+            Answers completed prior to termination have been securely saved and evaluated.
+          </div>
+
+          <div className="terminated-actions">
+            {terminatedResultId ? (
+              <button
+                className="btn btn-primary btn-lg"
+                onClick={() => navigate(`/result/${terminatedResultId}`)}
+              >
+                View Evaluated Results <ArrowRight size={16} />
+              </button>
+            ) : (
+              <button
+                className="btn btn-primary btn-lg"
+                onClick={() => {
+                  const existingResult = storage.getResultByAttempt(attempt.id);
+                  if (existingResult) {
+                    navigate(`/result/${existingResult.id}`);
+                  } else {
+                    navigate('/my-exams');
+                  }
+                }}
+              >
+                View Results <ArrowRight size={16} />
+              </button>
+            )}
+            <button
+              className="btn btn-secondary btn-lg"
+              onClick={() => navigate('/my-exams')}
+            >
+              Return to My Exams
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (evaluating) {
     return (
       <div className="exam-loading">
-        <div className="generating-icon" style={{ width: 64, height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, var(--c-primary), #8b5cf6)', borderRadius: 'var(--r-2xl)', color: 'white', marginBottom: 'var(--sp-6)' }}>
-          <div className="animate-spin" style={{ width: 28, height: 28, border: '3px solid white', borderTop: '3px solid transparent', borderRadius: '50%' }} />
+        <div style={{ marginBottom: 'var(--sp-6)', animation: 'pulse 2s infinite' }}>
+          <CbtLogo size={68} />
         </div>
         <h2 style={{ fontSize: 'var(--fs-xl)', fontWeight: 700 }}>Evaluating Your Answers</h2>
-        <p style={{ color: 'var(--c-text-secondary)', marginTop: 'var(--sp-2)' }}>AI is analyzing each response...</p>
+        <p style={{ color: 'var(--c-text-secondary)', marginTop: 'var(--sp-2)' }}>AI evaluation engine analyzing student responses against rubric...</p>
       </div>
     );
   }
@@ -320,7 +478,17 @@ export default function TakeExam() {
       {/* Top Bar */}
       <header className="exam-topbar">
         <div className="exam-topbar-left">
-          <span className="exam-title-bar">{exam.config.title}</span>
+          <div className="exam-mode-badge-wrap">
+            <CbtLogo size={22} />
+            <span className="exam-title-bar">{exam.config.title}</span>
+            <span className={`exam-mode-tag ${attempt.mode === 'practice' ? 'practice' : 'serious'}`}>
+              {attempt.mode === 'practice' ? (
+                <><Sparkles size={11} /> Practice Mode</>
+              ) : (
+                <><Shield size={11} /> Strict Examination</>
+              )}
+            </span>
+          </div>
         </div>
         <div className="exam-topbar-center">
           <div className={`exam-timer ${timeLeft < 300 ? 'danger' : timeLeft < 600 ? 'warning' : ''}`}>
@@ -339,6 +507,19 @@ export default function TakeExam() {
           </button>
         </div>
       </header>
+
+      {/* Mode Sub-banner */}
+      {attempt.mode === 'practice' ? (
+        <div className="practice-subtle-bar">
+          <Sparkles size={13} />
+          <span><strong>Practice Mode:</strong> Tab switching is permitted. Timer continues running in the background.</span>
+        </div>
+      ) : (
+        <div className="serious-subtle-bar">
+          <Shield size={13} />
+          <span><strong>Strict Examination:</strong> Leaving this window or switching tabs will immediately terminate your attempt.</span>
+        </div>
+      )}
 
       <div className="exam-body">
         {/* Question Panel */}

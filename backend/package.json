@@ -1,0 +1,34 @@
+{
+  "name": "cbt-ai-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx tests/system-audit.test.ts"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^8.0.0",
+    "multer": "^1.4.5-lts.1",
+    "pdfjs-dist": "^4.0.379",
+    "pino": "^9.5.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.7.7",
+    "@types/uuid": "^10.0.0",
+    "pino-pretty": "^13.1.3",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}

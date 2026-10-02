@@ -1,0 +1,38 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User-owned collections (exams, attempts, results)
+    // Strictly isolate User A's records from User B
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /exams/{examId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /attempts/{attemptId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /results/{resultId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Default deny for any unspecified path
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

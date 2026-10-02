@@ -1,0 +1,78 @@
+# ============================================================
+# CBT.AI — Docker Compose Production Stack
+# Layer 2: CBT.AI Backend (Exposed only via port 3001)
+# Layer 3: FreeLLMAPI Private Gateway (Isolated network, zero public exposure)
+# ============================================================
+
+version: '3.9'
+
+networks:
+  cbtai-public:
+    driver: bridge
+    internal: false  # Backend connects to upstream free AI endpoints (Gemini, Groq, OpenRouter)
+  freellm-private:
+    driver: bridge
+    internal: true   # STRICT ISOLATION: FreeLLMAPI has zero internet access and zero host port mapping
+
+services:
+  # ── FreeLLMAPI Private Gateway (Internal Only) ───────────────
+  freellmapi:
+    image: python:3.11-slim
+    container_name: cbtai-freellmapi
+    restart: unless-stopped
+    command: >
+      sh -c "pip install litellm && python -m litellm --host 0.0.0.0 --port 8000"
+    networks:
+      - freellm-private
+    environment:
+      - PORT=8000
+    # ZERO host ports mapped — completely inaccessible from public Internet
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── CBT.AI Backend API ────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cbtai-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"  # Reverse proxy / Cloudflare Tunnel connects to this port
+    networks:
+      - cbtai-public
+      - freellm-private
+    depends_on:
+      freellmapi:
+        condition: service_started
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-http://localhost:4173}
+      - FREE_ONLY=${FREE_ONLY:-true}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+      # FreeLLMAPI reachable via internal Docker service name
+      - FREELLMAPI_BASE_URL=http://freellmapi:8000
+      - FREELLMAPI_API_KEY=${FREELLMAPI_API_KEY:-sk-internal}
+      # Upstream Free Tier Provider Credentials (from .env)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      - PROVIDER_TIMEOUT_MS=${PROVIDER_TIMEOUT_MS:-35000}
+      - PROVIDER_COOLDOWN_MS=${PROVIDER_COOLDOWN_MS:-120000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      - GENERATION_LIMIT_MAX=${GENERATION_LIMIT_MAX:-10}
+      - JOB_TIMEOUT_MS=${JOB_TIMEOUT_MS:-480000}
+      - JOB_MAX_CONCURRENT=${JOB_MAX_CONCURRENT:-3}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

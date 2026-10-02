@@ -184,10 +184,13 @@ export interface StudentResponse {
   changesCount: number;
 }
 
+export type ExamMode = 'practice' | 'serious';
+
 export interface ExamAttempt {
   id: string;
   examId: string;
   examVersion: number;
+  mode?: ExamMode;
   studentName?: string;
   startedAt: number;
   submittedAt?: number;
@@ -195,11 +198,12 @@ export interface ExamAttempt {
   responses: Record<string, StudentResponse>;
   integrityLog: IntegrityEvent[];
   autoSubmitted: boolean;
-  status: 'in_progress' | 'submitted' | 'evaluated';
+  terminatedReason?: string;
+  status: 'in_progress' | 'submitted' | 'evaluated' | 'terminated';
 }
 
 export interface IntegrityEvent {
-  type: 'visibility_change' | 'focus_loss' | 'fullscreen_exit' | 'warning' | 'auto_submit';
+  type: 'visibility_change' | 'focus_loss' | 'fullscreen_exit' | 'warning' | 'auto_submit' | 'tab_hidden' | 'window_blur';
   timestamp: number;
   count?: number;
   message?: string;
