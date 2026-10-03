@@ -18,6 +18,7 @@ export interface Env {
   GROQ_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   CEREBRAS_API_KEY?: string;
+  EXAM_WORKFLOW?: any;
   ASSETS: { fetch: typeof fetch };
 }
 
