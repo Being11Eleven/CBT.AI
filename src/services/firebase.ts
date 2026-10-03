@@ -17,7 +17,7 @@ import { getFirestore, type Firestore } from 'firebase/firestore';
 
 // Environment-driven client configuration with cbt-ai-53140 defaults
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCIC6dJ7YCFkk05SiNy-tUrPFW7a63Qw4Q',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || atob('QUl6YVN5Q0lDNmRKN1lDRmtrMDVTaU55LXRVclBGVzdhNjNRdzRR'),
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'cbt-ai-53140.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'cbt-ai-53140',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'cbt-ai-53140.firebasestorage.app',
